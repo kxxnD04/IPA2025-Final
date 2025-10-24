@@ -1,0 +1,17 @@
+---
+- name: Configure MOTD Banner
+  hosts: routers
+  gather_facts: false
+  vars:
+    ansible_connect_timeout: 30
+    ansible_command_timeout: 120
+    ansible_ssh_retries: 2
+
+  tasks:
+    - name: Set MOTD banner
+      cisco.ios.ios_config:
+        lines:
+          - banner motd @{{ motd_message }}@
+      when: 
+        - motd_message is defined
+        - ansible_host == router_ip

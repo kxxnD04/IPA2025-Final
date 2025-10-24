@@ -17,6 +17,7 @@
         command: show running-config
         check_all: false
       register: show_run
+      when: router_ip is not defined or ansible_host == router_ip
 
     - name: Save running configuration locally
       ansible.builtin.copy:
@@ -24,4 +25,4 @@
         content: "{{ (show_run.stdout is string) | ternary(show_run.stdout, show_run.stdout | join('\n')) }}"
         mode: "0644"
       delegate_to: localhost
-      run_once: true
+      when: show_run is not skipped and show_run.stdout is defined

@@ -42,7 +42,7 @@ AUTH_HEADER = {"Authorization": f"Bearer {ACCESS_TOKEN}"}
 last_message_id = None
 method_specified = None  # Will store "restconf" or "netconf"
 ROUTER_IPS = ("10.0.15.61", "10.0.15.62", "10.0.15.63", "10.0.15.64", "10.0.15.65")
-VALID_COMMANDS = ("create", "delete", "enable", "disable", "status", "gigabit_status", "showrun")
+VALID_COMMANDS = ("create", "delete", "enable", "disable", "status", "gigabit_status", "showrun", "motd")
 
 while 1:
     time.sleep(1)
@@ -92,6 +92,8 @@ while 1:
     command = None
     ip = None
     responseMessage = None
+    motd_message = None  # For MOTD command with message
+    
     # Check if parts[1] is a method declaration
     if parts[1].lower() in ("restconf", "netconf"):
         if parts[1].lower() == "restconf":
@@ -112,6 +114,9 @@ while 1:
                     ip = parts[2]
                     if len(parts) >= 4:
                         command = parts[3].lower()
+                        # Check if it's MOTD with message
+                        if command == "motd" and len(parts) >= 5:
+                            motd_message = " ".join(parts[4:])
                     else:
                         responseMessage = "Error: No command found."
                 else:
@@ -126,6 +131,9 @@ while 1:
             ip = parts[1]
             if len(parts) >= 3:
                 command = parts[2].lower()
+                # Check if it's MOTD with message
+                if command == "motd" and len(parts) >= 4:
+                    motd_message = " ".join(parts[3:])
             else:
                 responseMessage = "Error: No command found."
         else:
@@ -133,7 +141,7 @@ while 1:
             command = parts[1].lower()
             ip = None
     
-    print(f"Method: {method_specified}, IP: {ip}, Command: {command}")
+    print(f"Method: {method_specified}, IP: {ip}, Command: {command}, MOTD: {motd_message}")
 
 #######################################################################################
 # 5. Complete the logic for each command
@@ -144,7 +152,51 @@ while 1:
         
         # Check if method is specified for commands that need it
         if command and command in VALID_COMMANDS:
-            if not method_specified:
+            # MOTD command doesn't require method
+            if command == "motd":
+                if not ip:
+                    responseMessage = "Error: No IP specified"
+                elif ip not in ROUTER_IPS:
+                    responseMessage = "Error: No IP specified"
+                elif motd_message:
+                    # Set MOTD using Ansible
+                    try:
+                        response = ansible_final.set_motd(ip, motd_message)
+                        responseMessage = response.get("msg", "Error: Ansible")
+                    except Exception as exc:
+                        print(f"Error setting MOTD: {exc}")
+                        responseMessage = "Error: Ansible"
+                else:
+                    # Get MOTD using Netmiko
+                    try:
+                        responseMessage = netmiko_final.get_motd(ip)
+                    except Exception as exc:
+                        print(f"Error getting MOTD: {exc}")
+                        responseMessage = "Error: Netmiko"
+            # gigabit_status and showrun also don't require method
+            elif command == "gigabit_status":
+                try:
+                    responseMessage = netmiko_final.gigabit_status(ip)
+                except Exception as exc:
+                    print(f"Error running gigabit_status: {exc}")
+                    responseMessage = "Error: Netmiko"
+            elif command == "showrun":
+                if not ip:
+                    responseMessage = "Error: No IP specified"
+                elif ip not in ROUTER_IPS:
+                    responseMessage = "Error: No IP specified"
+                else:
+                    try:
+                        response = ansible_final.showrun(ip)
+                        responseMessage = response.get("msg", "Error: Ansible")
+                        if response.get("status") == "OK":
+                            attachment_path = response.get("path")
+                        print(responseMessage)
+                    except Exception as exc:
+                        print(f"Error running showrun: {exc}")
+                        responseMessage = "Error: Ansible"
+            # Other commands require method
+            elif not method_specified:
                 responseMessage = "Error: No method specified"
             elif not ip:
                 responseMessage = "Error: No IP specified"
@@ -175,22 +227,6 @@ while 1:
                     responseMessage = restconf_final.status(ip, method_specified.capitalize())
                 elif method_specified == "netconf":
                     responseMessage = netconf_final.status(ip, method_specified.capitalize())
-            elif command == "gigabit_status":
-                try:
-                    responseMessage = netmiko_final.gigabit_status()
-                except Exception as exc:  # pragma: no cover - runtime failure logged
-                    print(f"Error running gigabit_status: {exc}")
-                    responseMessage = "Error: Netmiko"
-            elif command == "showrun":
-                try:
-                    response = ansible_final.showrun()
-                    responseMessage = response.get("msg", "Error: Ansible")
-                    if response.get("status") == "OK":
-                        attachment_path = response.get("path")
-                    print(responseMessage)
-                except Exception as exc:  # pragma: no cover - runtime failure logged
-                    print(f"Error running showrun: {exc}")
-                    responseMessage = "Error: Ansible"
         elif command:
             responseMessage = "Error: No command found."
 
