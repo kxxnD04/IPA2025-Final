@@ -1,0 +1,27 @@
+---
+- name: Backup running configuration
+  hosts: routers
+  gather_facts: false
+  vars:
+    student_id: "66070014"
+    output_file: "{{ playbook_dir }}/show_run_{{ student_id }}_{{ inventory_hostname }}.txt"
+
+    # เพิ่ม timeout ต่าง ๆ เนื่องจากพอเชื่อม VPN แล้ว การเชื่อมต่อช้ามาก
+    ansible_connect_timeout: 30       # เวลาเชื่อมต่อ (default ~10s)
+    ansible_command_timeout: 120      # เวลาในการรันคำสั่ง (default ~30s)
+    ansible_ssh_retries: 2            # ลองใหม่ถ้าเชื่อมต่อไม่ติด
+
+  tasks:
+    - name: Collect running configuration
+      ansible.netcommon.cli_command:
+        command: show running-config
+        check_all: false
+      register: show_run
+
+    - name: Save running configuration locally
+      ansible.builtin.copy:
+        dest: "{{ output_file }}"
+        content: "{{ (show_run.stdout is string) | ternary(show_run.stdout, show_run.stdout | join('\n')) }}"
+        mode: "0644"
+      delegate_to: localhost
+      run_once: true
