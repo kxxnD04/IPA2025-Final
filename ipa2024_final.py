@@ -127,7 +127,8 @@ while 1:
                 responseMessage = None
     else:
         # No method in parts[1], check if it's IP or command
-        if parts[1] in ROUTER_IPS:
+        # Check if parts[1] looks like an IP address (contains dots)
+        if "." in parts[1]:
             ip = parts[1]
             if len(parts) >= 3:
                 command = parts[2].lower()
@@ -157,7 +158,7 @@ while 1:
                 if not ip:
                     responseMessage = "Error: No IP specified"
                 elif ip not in ROUTER_IPS:
-                    responseMessage = "Error: No IP specified"
+                    responseMessage = "Error: No MOTD Configured"
                 elif motd_message:
                     # Set MOTD using Ansible
                     try:
@@ -172,7 +173,7 @@ while 1:
                         responseMessage = netmiko_final.get_motd(ip)
                     except Exception as exc:
                         print(f"Error getting MOTD: {exc}")
-                        responseMessage = "Error: Netmiko"
+                        responseMessage = "Error: No MOTD Configured"
             # gigabit_status and showrun also don't require method
             elif command == "gigabit_status":
                 try:
