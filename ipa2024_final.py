@@ -16,19 +16,9 @@ from dotenv import load_dotenv
 from requests_toolbelt.multipart.encoder import MultipartEncoder  # type: ignore
 
 import restconf_final
-
-try:
-    import netmiko_final  # type: ignore
-except Exception as exc:  # pragma: no cover - optional dependency
-    netmiko_final = None
-    print(f"Warning: netmiko_final unavailable ({exc})")
-
-try:
-    import ansible_final  # type: ignore
-except Exception as exc:  # pragma: no cover - optional dependency
-    ansible_final = None
-    print(f"Warning: ansible_final unavailable ({exc})")
-
+import netconf_final  # type: ignore
+import netmiko_final  # type: ignore
+import ansible_final  # type: ignore
 
 #######################################################################################
 # 2. Assign the Webex access token to the variable ACCESS_TOKEN using environment variables.
@@ -147,10 +137,10 @@ while 1:
 
 #######################################################################################
 # 5. Complete the logic for each command
-    
+    attachment_path = None
     if responseMessage is None:
         responseMessage = None
-        attachment_path = None
+
         
         # Check if method is specified for commands that need it
         if command and command in VALID_COMMANDS:
@@ -161,33 +151,46 @@ while 1:
             elif ip not in ROUTER_IPS:
                 responseMessage = "Error: No IP specified"
             elif command == "create":
-                responseMessage = restconf_final.create(ip, method_specified.capitalize())
+                if method_specified == "restconf":
+                    responseMessage = restconf_final.create(ip, method_specified.capitalize())
+                elif method_specified == "netconf":
+                    responseMessage = netconf_final.create(ip, method_specified.capitalize())
             elif command == "delete":
-                responseMessage = restconf_final.delete(ip, method_specified.capitalize())
+                if method_specified == "restconf":
+                    responseMessage = restconf_final.delete(ip, method_specified.capitalize())
+                elif method_specified == "netconf":
+                    responseMessage = netconf_final.delete(ip, method_specified.capitalize())
             elif command == "enable":
-                responseMessage = restconf_final.enable(ip, method_specified.capitalize())
+                if method_specified == "restconf":
+                    responseMessage = restconf_final.enable(ip, method_specified.capitalize())
+                elif method_specified == "netconf":
+                    responseMessage = netconf_final.enable(ip, method_specified.capitalize())
             elif command == "disable":
-                responseMessage = restconf_final.disable(ip, method_specified.capitalize())
+                if method_specified == "restconf":
+                    responseMessage = restconf_final.disable(ip, method_specified.capitalize())
+                elif method_specified == "netconf":
+                    responseMessage = netconf_final.disable(ip, method_specified.capitalize())
             elif command == "status":
-                responseMessage = restconf_final.status(ip, method_specified.capitalize())
+                if method_specified == "restconf":
+                    responseMessage = restconf_final.status(ip, method_specified.capitalize())
+                elif method_specified == "netconf":
+                    responseMessage = netconf_final.status(ip, method_specified.capitalize())
             elif command == "gigabit_status":
-                if netmiko_final is None:
+                try:
+                    responseMessage = netmiko_final.gigabit_status()
+                except Exception as exc:  # pragma: no cover - runtime failure logged
+                    print(f"Error running gigabit_status: {exc}")
                     responseMessage = "Error: Netmiko"
-                else:
-                    try:
-                        responseMessage = netmiko_final.gigabit_status()
-                    except Exception as exc:  # pragma: no cover - runtime failure logged
-                        print(f"Error running gigabit_status: {exc}")
-                        responseMessage = "Error: Netmiko"
             elif command == "showrun":
-                if ansible_final is None:
-                    responseMessage = "Error: Ansible"
-                else:
+                try:
                     response = ansible_final.showrun()
                     responseMessage = response.get("msg", "Error: Ansible")
                     if response.get("status") == "OK":
                         attachment_path = response.get("path")
                     print(responseMessage)
+                except Exception as exc:  # pragma: no cover - runtime failure logged
+                    print(f"Error running showrun: {exc}")
+                    responseMessage = "Error: Ansible"
         elif command:
             responseMessage = "Error: No command found."
 
