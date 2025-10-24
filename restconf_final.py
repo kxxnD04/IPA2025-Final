@@ -4,19 +4,21 @@ import requests
 requests.packages.urllib3.disable_warnings()
 
 STUDENT_ID = "66070014"
-ROUTER_IP = "10.0.15.65"
 INTERFACE_NAME = f"Loopback{STUDENT_ID}"
-BASE_URL = f"https://{ROUTER_IP}/restconf/data"
-API_URL = f"{BASE_URL}/ietf-interfaces:interfaces/interface={INTERFACE_NAME}"
-API_URL_STATUS = (
-	f"{BASE_URL}/ietf-interfaces:interfaces-state/interface={INTERFACE_NAME}"
-)
 
 HEADERS = {
 	"Accept": "application/yang-data+json",
 	"Content-Type": "application/yang-data+json",
 }
 AUTH = ("admin", "cisco")
+
+
+def _get_urls(router_ip):
+	"""Generate API URLs for the given router IP"""
+	base_url = f"https://{router_ip}/restconf/data"
+	api_url = f"{base_url}/ietf-interfaces:interfaces/interface={INTERFACE_NAME}"
+	api_url_status = f"{base_url}/ietf-interfaces:interfaces-state/interface={INTERFACE_NAME}"
+	return api_url, api_url_status
 
 
 def _loopback_payload(enabled=True):
@@ -43,8 +45,9 @@ def _loopback_payload(enabled=True):
 	}
 
 # Helpers Functions to check that loopback interface or any GigabitEthernet existence
-def _interface_exists():
-	resp = requests.get(API_URL, auth=AUTH, headers=HEADERS, verify=False)
+def _interface_exists(router_ip):
+	api_url, _ = _get_urls(router_ip)
+	resp = requests.get(api_url, auth=AUTH, headers=HEADERS, verify=False)
 	if resp.status_code == 200:
 		return True
 	if resp.status_code == 404:
@@ -52,17 +55,18 @@ def _interface_exists():
 	raise RuntimeError(f"RESTCONF lookup failed with status {resp.status_code}")
 
 
-def create():
+def create(router_ip, method="Restconf"):
 	try:
-		if _interface_exists():
+		if _interface_exists(router_ip):
 			return f"Cannot create: Interface {INTERFACE_NAME.lower()}"
 	except RuntimeError as error:
 		print(error)
 		return "Error: RESTCONF create"
 
+	api_url, _ = _get_urls(router_ip)
 	payload = _loopback_payload(enabled=True)
 	resp = requests.put(
-		API_URL,
+		api_url,
 		data=json.dumps(payload),
 		auth=AUTH,
 		headers=HEADERS,
@@ -71,22 +75,23 @@ def create():
 
 	if 200 <= resp.status_code <= 299:
 		print(f"STATUS OK: {resp.status_code}")
-		return f"Interface {INTERFACE_NAME.lower()} is created successfully"
+		return f"Interface {INTERFACE_NAME.lower()} is created successfully using {method}"
 
 	print(f"Error. Status Code: {resp.status_code}")
 	return "Error: RESTCONF create"
 
 
-def delete():
+def delete(router_ip, method="Restconf"):
 	try:
-		if not _interface_exists():
+		if not _interface_exists(router_ip):
 			return f"Cannot delete: Interface {INTERFACE_NAME.lower()}"
 	except RuntimeError as error:
 		print(error)
 		return "Error: RESTCONF delete"
 
+	api_url, _ = _get_urls(router_ip)
 	resp = requests.delete(
-		API_URL,
+		api_url,
 		auth=AUTH,
 		headers=HEADERS,
 		verify=False,
@@ -94,23 +99,24 @@ def delete():
 
 	if 200 <= resp.status_code <= 299:
 		print(f"STATUS OK: {resp.status_code}")
-		return f"Interface {INTERFACE_NAME.lower()} is deleted successfully"
+		return f"Interface {INTERFACE_NAME.lower()} is deleted successfully using {method}"
 
 	print(f"Error. Status Code: {resp.status_code}")
 	return "Error: RESTCONF delete"
 
 
-def enable():
+def enable(router_ip, method="Restconf"):
 	try:
-		if not _interface_exists():
+		if not _interface_exists(router_ip):
 			return f"Cannot enable: Interface {INTERFACE_NAME.lower()}"
 	except RuntimeError as error:
 		print(error)
 		return "Error: RESTCONF enable"
 
+	api_url, _ = _get_urls(router_ip)
 	payload = {"ietf-interfaces:interface": {"enabled": True}}
 	resp = requests.patch(
-		API_URL,
+		api_url,
 		data=json.dumps(payload),
 		auth=AUTH,
 		headers=HEADERS,
@@ -119,23 +125,24 @@ def enable():
 
 	if 200 <= resp.status_code <= 299:
 		print(f"STATUS OK: {resp.status_code}")
-		return f"Interface {INTERFACE_NAME.lower()} is enabled successfully"
+		return f"Interface {INTERFACE_NAME.lower()} is enabled successfully using {method}"
 
 	print(f"Error. Status Code: {resp.status_code}")
 	return "Error: RESTCONF enable"
 
 
-def disable():
+def disable(router_ip, method="Restconf"):
 	try:
-		if not _interface_exists():
+		if not _interface_exists(router_ip):
 			return f"Cannot shutdown: Interface {INTERFACE_NAME.lower()}"
 	except RuntimeError as error:
 		print(error)
 		return "Error: RESTCONF disable"
 
+	api_url, _ = _get_urls(router_ip)
 	payload = {"ietf-interfaces:interface": {"enabled": False}}
 	resp = requests.patch(
-		API_URL,
+		api_url,
 		data=json.dumps(payload),
 		auth=AUTH,
 		headers=HEADERS,
@@ -144,15 +151,16 @@ def disable():
 
 	if 200 <= resp.status_code <= 299:
 		print(f"STATUS OK: {resp.status_code}")
-		return f"Interface {INTERFACE_NAME.lower()} is shutdowned successfully"
+		return f"Interface {INTERFACE_NAME.lower()} is shutdowned successfully using {method}"
 
 	print(f"Error. Status Code: {resp.status_code}")
 	return "Error: RESTCONF disable"
 
 
-def status():
+def status(router_ip, method="Restconf"):
+	_, api_url_status = _get_urls(router_ip)
 	resp = requests.get(
-		API_URL_STATUS,
+		api_url_status,
 		auth=AUTH,
 		headers=HEADERS,
 		verify=False,
@@ -173,17 +181,17 @@ def status():
 		oper_status = interface_data.get("oper-status", "unknown")
 
 		if admin_status == "up" and oper_status == "up":
-			return f"Interface {INTERFACE_NAME.lower()} is enabled"
+			return f"Interface {INTERFACE_NAME.lower()} is enabled (checked by {method})"
 		if admin_status == "down" and oper_status == "down":
-			return f"Interface {INTERFACE_NAME.lower()} is disabled"
+			return f"Interface {INTERFACE_NAME.lower()} is disabled (checked by {method})"
 		return (
 			f"Interface {INTERFACE_NAME.lower()} admin-status={admin_status} "
-			f"oper-status={oper_status}"
+			f"oper-status={oper_status} (checked by {method})"
 		)
 
 	if resp.status_code == 404:
 		print(f"STATUS NOT FOUND: {resp.status_code}")
-		return f"No Interface {INTERFACE_NAME.lower()}"
+		return f"No Interface {INTERFACE_NAME.lower()} (checked by {method})"
 
 	print(f"Error. Status Code: {resp.status_code}")
 	return "Error: RESTCONF status"

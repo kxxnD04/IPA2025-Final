@@ -50,6 +50,9 @@ WEBEX_MESSAGES_URL = "https://webexapis.com/v1/messages"
 STUDENT_ID = getattr(restconf_final, "STUDENT_ID", "66070014")
 AUTH_HEADER = {"Authorization": f"Bearer {ACCESS_TOKEN}"}
 last_message_id = None
+method_specified = None  # Will store "restconf" or "netconf"
+ROUTER_IPS = ("10.0.15.61", "10.0.15.62", "10.0.15.63", "10.0.15.64", "10.0.15.65")
+VALID_COMMANDS = ("create", "delete", "enable", "disable", "status", "gigabit_status", "showrun")
 
 while 1:
     time.sleep(1)
@@ -94,45 +97,99 @@ while 1:
     if len(parts) < 2 or parts[0] != f"/{STUDENT_ID}": # check if the message starts with my student ID
         continue
 
-    command = parts[1].lower()
-    print("Command", command)
+    # Parse command structure: /{STUDENT_ID} [method/IP/command] [IP/command] [command]
+    
+    command = None
+    ip = None
+    responseMessage = None
+    # Check if parts[1] is a method declaration
+    if parts[1].lower() in ("restconf", "netconf"):
+        if parts[1].lower() == "restconf":
+            method_specified = "restconf"
+            responseMessage = "Ok: Restconf"
+        else:
+            method_specified = "netconf"
+            responseMessage = "Ok: Netconf"
+        
+        # If only method is specified, send response and continue
+        if len(parts) == 2:
+            pass  # Will send responseMessage below
+        else:
+            # More parts after method, continue parsing
+            if len(parts) >= 3:
+                # Check if parts[2] is IP
+                if parts[2] in ROUTER_IPS:
+                    ip = parts[2]
+                    if len(parts) >= 4:
+                        command = parts[3].lower()
+                    else:
+                        responseMessage = "Error: No command found."
+                else:
+                    # parts[2] might be a command without IP
+                    command = parts[2].lower()
+                    ip = None
+            else:
+                responseMessage = None
+    else:
+        # No method in parts[1], check if it's IP or command
+        if parts[1] in ROUTER_IPS:
+            ip = parts[1]
+            if len(parts) >= 3:
+                command = parts[2].lower()
+            else:
+                responseMessage = "Error: No command found."
+        else:
+            # parts[1] is likely a command
+            command = parts[1].lower()
+            ip = None
+    
+    print(f"Method: {method_specified}, IP: {ip}, Command: {command}")
 
 #######################################################################################
 # 5. Complete the logic for each command
-
-    responseMessage = None
-    attachment_path = None
-
-    if command == "create":
-        responseMessage = restconf_final.create()
-    elif command == "delete":
-        responseMessage = restconf_final.delete()
-    elif command == "enable":
-        responseMessage = restconf_final.enable()
-    elif command == "disable":
-        responseMessage = restconf_final.disable()
-    elif command == "status":
-        responseMessage = restconf_final.status()
-    elif command == "gigabit_status":
-        if netmiko_final is None:
-            responseMessage = "Error: Netmiko"
-        else:
-            try:
-                responseMessage = netmiko_final.gigabit_status()
-            except Exception as exc:  # pragma: no cover - runtime failure logged
-                print(f"Error running gigabit_status: {exc}")
-                responseMessage = "Error: Netmiko"
-    elif command == "showrun":
-        if ansible_final is None:
-            responseMessage = "Error: Ansible"
-        else:
-            response = ansible_final.showrun()
-            responseMessage = response.get("msg", "Error: Ansible")
-            if response.get("status") == "OK":
-                attachment_path = response.get("path")
-            print(responseMessage)
-    else:
-        responseMessage = "Error: No command or unknown command"
+    
+    if responseMessage is None:
+        responseMessage = None
+        attachment_path = None
+        
+        # Check if method is specified for commands that need it
+        if command and command in VALID_COMMANDS:
+            if not method_specified:
+                responseMessage = "Error: No method specified"
+            elif not ip:
+                responseMessage = "Error: No IP specified"
+            elif ip not in ROUTER_IPS:
+                responseMessage = "Error: No IP specified"
+            elif command == "create":
+                responseMessage = restconf_final.create(ip, method_specified.capitalize())
+            elif command == "delete":
+                responseMessage = restconf_final.delete(ip, method_specified.capitalize())
+            elif command == "enable":
+                responseMessage = restconf_final.enable(ip, method_specified.capitalize())
+            elif command == "disable":
+                responseMessage = restconf_final.disable(ip, method_specified.capitalize())
+            elif command == "status":
+                responseMessage = restconf_final.status(ip, method_specified.capitalize())
+            elif command == "gigabit_status":
+                if netmiko_final is None:
+                    responseMessage = "Error: Netmiko"
+                else:
+                    try:
+                        responseMessage = netmiko_final.gigabit_status()
+                    except Exception as exc:  # pragma: no cover - runtime failure logged
+                        print(f"Error running gigabit_status: {exc}")
+                        responseMessage = "Error: Netmiko"
+            elif command == "showrun":
+                if ansible_final is None:
+                    responseMessage = "Error: Ansible"
+                else:
+                    response = ansible_final.showrun()
+                    responseMessage = response.get("msg", "Error: Ansible")
+                    if response.get("status") == "OK":
+                        attachment_path = response.get("path")
+                    print(responseMessage)
+        elif command:
+            responseMessage = "Error: No command found."
 
     if not responseMessage:
         continue
